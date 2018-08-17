@@ -147,6 +147,17 @@ ble_ll_sched_conn_overlap(struct ble_ll_sched_item *entry)
     return rc;
 }
 
+static uint32_t
+ble_ll_sched_get_next_start_time(void)
+{
+    if (ble_ll_sched_get_current_type() == BLE_LL_SCHED_TYPE_NONE) {
+        /* We can start now */
+        return os_cputime_get32();
+    }
+
+    return g_ble_ll_sched_current.end_time;
+}
+
 static struct ble_ll_sched_item *
 ble_ll_sched_insert_if_empty(struct ble_ll_sched_item *sch)
 {
@@ -658,6 +669,7 @@ ble_ll_sched_master_new(struct ble_ll_conn_sm *connsm,
     OS_ENTER_CRITICAL(sr);
 
     /* The schedule item must occur after current running item (if any) */
+    earliest_start = max(earliest_start, ble_ll_sched_get_next_start_time());
     sch->start_time = earliest_start;
     initial_start = earliest_start;
 
@@ -852,14 +864,23 @@ ble_ll_sched_adv_new(struct ble_ll_sched_item *sch, ble_ll_sched_adv_new_cb cb,
     os_sr_t sr;
     uint32_t adv_start;
     uint32_t duration;
+    uint32_t offset;
     struct ble_ll_sched_item *entry;
     struct ble_ll_sched_item *orig;
+
+    OS_ENTER_CRITICAL(sr);
+
+    /* Make sure we don't overlap with current element */
+    offset = (int32_t)(ble_ll_sched_get_next_start_time() - sch->start_time);
+    if (offset > 0) {
+        sch->start_time += offset;
+        sch->end_time += offset;
+    }
 
     /* Get length of schedule item */
     duration = sch->end_time - sch->start_time;
     orig = sch;
 
-    OS_ENTER_CRITICAL(sr);
     entry = ble_ll_sched_insert_if_empty(sch);
     if (!entry) {
         adv_start = sch->start_time;
@@ -920,11 +941,26 @@ ble_ll_sched_adv_reschedule(struct ble_ll_sched_item *sch, uint32_t *start,
     uint32_t orig_start;
     uint32_t duration;
     uint32_t rand_ticks;
+    int32_t cur_offset;
     struct ble_ll_sched_item *entry;
     struct ble_ll_sched_item *next_sch;
     struct ble_ll_sched_item *before;
     struct ble_ll_sched_item *start_overlap;
     struct ble_ll_sched_item *end_overlap;
+
+    OS_ENTER_CRITICAL(sr);
+
+    /* Make sure we don't overlap with current element */
+    cur_offset = (int32_t)(ble_ll_sched_get_next_start_time() - sch->start_time);
+    if (cur_offset > 0) {
+        /* We can't move this item later than allowed margin */
+        if (cur_offset > max_delay_ticks) {
+            rc = -1;
+            goto done;
+        }
+        sch->start_time += cur_offset;
+        sch->end_time += cur_offset;
+    }
 
     /* Get length of schedule item */
     duration = sch->end_time - sch->start_time;
@@ -937,7 +973,6 @@ ble_ll_sched_adv_reschedule(struct ble_ll_sched_item *sch, uint32_t *start,
     end_overlap = NULL;
     before = NULL;
     rc = 0;
-    OS_ENTER_CRITICAL(sr);
 
     entry = ble_ll_sched_insert_if_empty(sch);
     if (entry) {
@@ -1030,6 +1065,7 @@ ble_ll_sched_adv_reschedule(struct ble_ll_sched_item *sch, uint32_t *start,
 #endif
     }
 
+done:
     OS_EXIT_CRITICAL(sr);
 
     sch = TAILQ_FIRST(&g_ble_ll_sched_q);
@@ -1049,6 +1085,11 @@ ble_ll_sched_adv_resched_pdu(struct ble_ll_sched_item *sch)
 
     lls = ble_ll_state_get();
     if ((lls == BLE_LL_STATE_ADV) || (lls == BLE_LL_STATE_CONNECTION)) {
+        goto adv_resched_pdu_fail;
+    }
+
+    /* Make sure we don't overlap with current element */
+    if (CPUTIME_LT(sch->start_time, ble_ll_sched_get_next_start_time())) {
         goto adv_resched_pdu_fail;
     }
 
