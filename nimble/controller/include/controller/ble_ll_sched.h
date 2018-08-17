@@ -20,6 +20,9 @@
 #ifndef H_BLE_LL_SCHED_
 #define H_BLE_LL_SCHED_
 
+#include "os/os.h"
+#include "nimble/ble.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -69,6 +72,7 @@ extern uint8_t g_ble_ll_sched_offset_ticks;
 #define BLE_LL_SCHED_ERR_OVERLAP    (1)
 
 /* Types of scheduler events */
+#define BLE_LL_SCHED_TYPE_NONE      (0)
 #define BLE_LL_SCHED_TYPE_ADV       (1)
 #define BLE_LL_SCHED_TYPE_SCAN      (2)
 #define BLE_LL_SCHED_TYPE_CONN      (3)
@@ -182,6 +186,9 @@ int ble_ll_sched_conn_reschedule(struct ble_ll_conn_sm * connsm);
  * @return int 0: No events are scheduled 1: there is an upcoming event
  */
 int ble_ll_sched_next_time(uint32_t *next_event_time);
+
+/* Return type of currently executing scheduler item */
+uint8_t ble_ll_sched_get_current_type(void);
 
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
 struct ble_ll_scan_sm;
