@@ -1331,6 +1331,18 @@ ble_phy_dbg_time_setup(void)
     NRF_PPI->FORK[4].TEP = (uint32_t)&(NRF_GPIOTE->TASKS_CLR[gpiote_idx]);
     NRF_PPI->FORK[5].TEP = (uint32_t)&(NRF_GPIOTE->TASKS_CLR[gpiote_idx]);
 #endif
+
+    ble_phy_dbg_time_setup_gpiote(--gpiote_idx, 38);
+    hfclk_request_gpiote = gpiote_idx;
+
+    ble_phy_dbg_time_setup_gpiote(--gpiote_idx, 39);
+    hfclk_requested_state_gpiote = gpiote_idx;
+
+    ble_phy_dbg_time_setup_gpiote(--gpiote_idx, 40);
+    hfclk_state_gpiote = gpiote_idx;
+    NRF_PPI->CH[16].EEP = (uint32_t)&(NRF_CLOCK->EVENTS_HFCLKSTARTED);
+    NRF_PPI->CH[16].TEP = (uint32_t)&(NRF_GPIOTE->TASKS_SET[gpiote_idx]);
+    NRF_PPI->CHENSET = PPI_CHEN_CH16_Msk;
 }
 
 /**
