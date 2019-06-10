@@ -32,7 +32,7 @@ print_bytes(const uint8_t *bytes, int len)
     int i;
 
     for (i = 0; i < len; i++) {
-        console_printf("%s0x%02x", i != 0 ? ":" : "", bytes[i]);
+        console_printf("%s%02x", i != 0 ? " " : "", bytes[i]);
     }
 }
 

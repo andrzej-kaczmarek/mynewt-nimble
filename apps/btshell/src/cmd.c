@@ -1106,7 +1106,7 @@ static const struct shell_cmd_help disconnect_help = {
  *****************************************************************************/
 
 static struct btshell_scan_opts g_scan_opts = {
-        .limit = UINT16_MAX,
+        .limit = 16,
         .ignore_legacy = 0,
 };
 

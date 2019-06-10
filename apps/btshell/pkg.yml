@@ -34,6 +34,7 @@ pkg.deps:
     - nimble/host/services/gatt
     - nimble/host/store/ram
     - nimble/transport
+    - nimble/host/util
 
 pkg.deps.BTSHELL_ANS:
     - nimble/host/services/ans

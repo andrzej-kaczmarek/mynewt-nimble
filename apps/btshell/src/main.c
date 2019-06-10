@@ -43,6 +43,7 @@
 #include "host/ble_gatt.h"
 #include "host/ble_store.h"
 #include "host/ble_sm.h"
+#include "host/util/util.h"
 
 /* Mandatory services. */
 #include "services/gap/ble_svc_gap.h"
@@ -54,6 +55,12 @@
 #include "../src/ble_hs_conn_priv.h"
 #include "../src/ble_hs_atomic_priv.h"
 #include "../src/ble_hs_priv.h"
+
+#define COLOR_RED       "\x1B[1;31m"
+#define COLOR_GREEN     "\x1B[32m"
+#define COLOR_YELLOW    "\x1B[1;33m"
+#define COLOR_WHITE     "\x1B[1;37m"
+#define COLOR_DEFAULT   "\x1B[0m"
 
 #if MYNEWT_VAL(BLE_ROLE_CENTRAL)
 #define BTSHELL_MAX_SVCS               32
@@ -161,128 +168,31 @@ btshell_print_error(char *msg, uint16_t conn_handle,
 static void
 btshell_print_adv_fields(const struct ble_hs_adv_fields *fields)
 {
-    uint8_t *u8p;
-    int i;
-
-    if (fields->flags != 0) {
-        console_printf("    flags=0x%02x:\n", fields->flags);
-
-        if (!(fields->flags & BLE_HS_ADV_F_DISC_LTD) &&
-                !(fields->flags & BLE_HS_ADV_F_DISC_GEN)) {
-                console_printf("        Non-discoverable mode\n");
-        }
-
-        if (fields->flags & BLE_HS_ADV_F_DISC_LTD) {
-                console_printf("        Limited discoverable mode\n");
-        }
-
-        if (fields->flags & BLE_HS_ADV_F_DISC_GEN) {
-                console_printf("        General discoverable mode\n");
-        }
-
-        if (fields->flags & BLE_HS_ADV_F_BREDR_UNSUP) {
-                console_printf("        BR/EDR not supported\n");
-        }
-    }
-
-    if (fields->uuids16 != NULL) {
-        console_printf("    uuids16(%scomplete)=",
-                       fields->uuids16_is_complete ? "" : "in");
-        for (i = 0; i < fields->num_uuids16; i++) {
-            print_uuid(&fields->uuids16[i].u);
-            console_printf(" ");
-        }
-        console_printf("\n");
-    }
-
-    if (fields->uuids32 != NULL) {
-        console_printf("    uuids32(%scomplete)=",
-                       fields->uuids32_is_complete ? "" : "in");
-        for (i = 0; i < fields->num_uuids32; i++) {
-            print_uuid(&fields->uuids32[i].u);
-            console_printf(" ");
-        }
-        console_printf("\n");
-    }
-
-    if (fields->uuids128 != NULL) {
-        console_printf("    uuids128(%scomplete)=",
-                       fields->uuids128_is_complete ? "" : "in");
-        for (i = 0; i < fields->num_uuids128; i++) {
-            print_uuid(&fields->uuids128[i].u);
-            console_printf(" ");
-        }
-        console_printf("\n");
-    }
+//    if (fields->flags != 0) {
+//        console_printf("%sflags=", prefix);
+//        if (fields->flags & BLE_HS_ADV_F_DISC_LTD) {
+//            console_printf("L");
+//        }
+//        if (fields->flags & BLE_HS_ADV_F_DISC_GEN) {
+//            console_printf("G");
+//        }
+//        if (fields->flags & BLE_HS_ADV_F_BREDR_UNSUP) {
+//            console_printf("N");
+//        }
+//        prefix = "";
+//    }
 
     if (fields->name != NULL) {
-        console_printf("    name(%scomplete)=",
+        console_printf("        %scomplete-name=",
                        fields->name_is_complete ? "" : "in");
         console_write((char *)fields->name, fields->name_len);
         console_printf("\n");
     }
 
-    if (fields->tx_pwr_lvl_is_present) {
-        console_printf("    tx_pwr_lvl=%d\n", fields->tx_pwr_lvl);
-    }
-
-    if (fields->slave_itvl_range != NULL) {
-        console_printf("    slave_itvl_range=");
-        print_bytes(fields->slave_itvl_range,
-                            BLE_HS_ADV_SLAVE_ITVL_RANGE_LEN);
-        console_printf("\n");
-    }
-
-    if (fields->svc_data_uuid16 != NULL) {
-        console_printf("    svc_data_uuid16=");
-        print_bytes(fields->svc_data_uuid16,
-                            fields->svc_data_uuid16_len);
-        console_printf("\n");
-    }
-
-    if (fields->public_tgt_addr != NULL) {
-        console_printf("    public_tgt_addr=");
-        u8p = fields->public_tgt_addr;
-        for (i = 0; i < fields->num_public_tgt_addrs; i++) {
-            print_addr(u8p);
-            u8p += BLE_HS_ADV_PUBLIC_TGT_ADDR_ENTRY_LEN;
-        }
-        console_printf("\n");
-    }
-
-    if (fields->appearance_is_present) {
-        console_printf("    appearance=0x%04x\n", fields->appearance);
-    }
-
-    if (fields->adv_itvl_is_present) {
-        console_printf("    adv_itvl=0x%04x\n", fields->adv_itvl);
-    }
-
-    if (fields->svc_data_uuid32 != NULL) {
-        console_printf("    svc_data_uuid32=");
-        print_bytes(fields->svc_data_uuid32,
-                             fields->svc_data_uuid32_len);
-        console_printf("\n");
-    }
-
-    if (fields->svc_data_uuid128 != NULL) {
-        console_printf("    svc_data_uuid128=");
-        print_bytes(fields->svc_data_uuid128,
-                            fields->svc_data_uuid128_len);
-        console_printf("\n");
-    }
-
-    if (fields->uri != NULL) {
-        console_printf("    uri=");
-        print_bytes(fields->uri, fields->uri_len);
-        console_printf("\n");
-    }
-
-    if (fields->mfg_data != NULL) {
-        console_printf("    mfg_data=");
-        print_bytes(fields->mfg_data, fields->mfg_data_len);
-        console_printf("\n");
-    }
+//    if (fields->appearance_is_present) {
+//        console_printf("%sappearance=0x%04x\n", prefix, fields->appearance);
+//        prefix = "";
+//    }
 }
 
 static int
@@ -917,18 +827,20 @@ btshell_decode_adv_data(uint8_t *adv_data, uint8_t adv_data_len, void *arg)
 {
     struct btshell_scan_opts *scan_opts = arg;
     struct ble_hs_adv_fields fields;
-
-    console_printf(" data_length=%d data=", adv_data_len);
+    int rc;
 
     if (scan_opts) {
         adv_data_len = min(adv_data_len, scan_opts->limit);
     }
 
+    console_printf("        ");
     print_bytes(adv_data, adv_data_len);
+    console_printf("\n");
 
-    console_printf(" fields:\n");
-    ble_hs_adv_parse_fields(&fields, adv_data, adv_data_len);
-    btshell_print_adv_fields(&fields);
+    rc = ble_hs_adv_parse_fields(&fields, adv_data, adv_data_len);
+    if (!rc) {
+        btshell_print_adv_fields(&fields);
+    }
 }
 
 #if MYNEWT_VAL(BLE_EXT_ADV)
@@ -943,10 +855,36 @@ btshell_decode_event_type(struct ble_gap_ext_disc_desc *desc, void *arg)
             return;
         }
 
-        console_printf("Legacy PDU type %d", desc->legacy_event_type);
-        if (desc->legacy_event_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
-            directed = 1;
+        console_printf(COLOR_WHITE);
+        console_printf("LegAdv  ");
+        print_addr(desc->addr.val);
+        console_printf("/%d  ", desc->addr.type);
+        console_printf(COLOR_DEFAULT);
+
+        switch (desc->legacy_event_type) {
+            case BLE_HCI_ADV_RPT_EVTYPE_ADV_IND:
+                console_printf("ADV_IND  ");
+                break;
+            case BLE_HCI_ADV_RPT_EVTYPE_DIR_IND:
+                console_printf("ADV_DIRECT_IND  ");
+                directed = 1;
+                break;
+            case BLE_HCI_ADV_RPT_EVTYPE_SCAN_IND:
+                console_printf("SCAN_IND  ");
+                break;
+            case BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND:
+                console_printf("ADV_NONCONN_IND  ");
+                break;
+            case BLE_HCI_ADV_RPT_EVTYPE_SCAN_RSP:
+                console_printf("SCAN_RSP  ");
+                break;
+            default:
+                console_printf(COLOR_RED);
+                console_printf("Unknown(%02x)  ", desc->legacy_event_type);
+                console_printf(COLOR_DEFAULT);
+                break;
         }
+
         goto common_data;
     } else {
         if (scan_opts && scan_opts->periodic_only && desc->periodic_adv_itvl == 0) {
@@ -954,51 +892,107 @@ btshell_decode_event_type(struct ble_gap_ext_disc_desc *desc, void *arg)
         }
     }
 
-    console_printf("Extended adv: ");
+    console_printf(COLOR_WHITE);
+    console_printf("ExtAdv  ");
+    print_addr(desc->addr.val);
+    console_printf("/%d  ", desc->addr.type);
+    console_printf(COLOR_DEFAULT);
+
+    /* flags */
     if (desc->props & BLE_HCI_ADV_CONN_MASK) {
-        console_printf("'conn' ");
+        console_write("C", 1);
+    } else {
+        console_write("-", 1);
     }
     if (desc->props & BLE_HCI_ADV_SCAN_MASK) {
-        console_printf("'scan' ");
+        console_write("S", 1);
+    } else {
+        console_write("-", 1);
     }
     if (desc->props & BLE_HCI_ADV_DIRECT_MASK) {
-        console_printf("'dir' ");
+        console_write("D", 1);
         directed = 1;
+    } else {
+        console_write("-", 1);
     }
-
     if (desc->props & BLE_HCI_ADV_SCAN_RSP_MASK) {
-        console_printf("'scan rsp' ");
+        console_write("R", 1);
+    } else {
+        console_write("-", 1);
     }
 
-    switch(desc->data_status) {
-    case BLE_GAP_EXT_ADV_DATA_STATUS_COMPLETE:
-        console_printf("complete");
+    switch (desc->prim_phy) {
+    case BLE_GAP_LE_PHY_1M:
+        console_printf("  1M");
         break;
-    case BLE_GAP_EXT_ADV_DATA_STATUS_INCOMPLETE:
-        console_printf("incomplete");
-        break;
-    case BLE_GAP_EXT_ADV_DATA_STATUS_TRUNCATED:
-        console_printf("truncated");
+    case BLE_GAP_LE_PHY_CODED:
+        console_printf("  Co");
         break;
     default:
-        console_printf("reserved %d", desc->data_status);
+        console_printf(COLOR_RED);
+        console_printf("  %02x", desc->prim_phy);
+        console_printf(COLOR_DEFAULT);
         break;
     }
 
-common_data:
-    console_printf(" rssi=%d txpower=%d, pphy=%d, sphy=%d, sid=%d,"
-                   " periodic_adv_itvl=%u, addr_type=%d addr=",
-                   desc->rssi, desc->tx_power, desc->prim_phy, desc->sec_phy,
-                   desc->sid, desc->periodic_adv_itvl, desc->addr.type);
-    print_addr(desc->addr.val);
-    if (directed) {
-        console_printf(" init_addr_type=%d inita=", desc->direct_addr.type);
-        print_addr(desc->direct_addr.val);
+    console_write("/", 1);
+
+    switch (desc->sec_phy) {
+    case BLE_GAP_LE_PHY_1M:
+        console_printf("1M  ");
+        break;
+    case BLE_GAP_LE_PHY_2M:
+        console_printf("2M  ");
+        break;
+    case BLE_GAP_LE_PHY_CODED:
+        console_printf("Co  ");
+        break;
+    default:
+        console_printf(COLOR_RED);
+        console_printf("%02x  ", desc->sec_phy);
+        console_printf(COLOR_DEFAULT);
+        break;
     }
 
-    console_printf("\n");
+    console_printf("0x%02x/", desc->sid);
 
-    if(!desc->length_data) {
+    /* data status */
+    switch(desc->data_status) {
+    case BLE_GAP_EXT_ADV_DATA_STATUS_COMPLETE:
+        console_printf(COLOR_GREEN);
+        console_printf("complete  ");
+        console_printf(COLOR_DEFAULT);
+        break;
+    case BLE_GAP_EXT_ADV_DATA_STATUS_INCOMPLETE:
+        console_printf("incomplete  ");
+        break;
+    case BLE_GAP_EXT_ADV_DATA_STATUS_TRUNCATED:
+        console_printf(COLOR_YELLOW);
+        console_printf("truncated  ");
+        console_printf(COLOR_DEFAULT);
+        break;
+    default:
+        console_printf(COLOR_RED);
+        console_printf("%02x  ", desc->data_status);
+        console_printf(COLOR_DEFAULT);
+        break;
+    }
+
+    console_printf("txpwr=%d ", desc->tx_power);
+
+common_data:
+    console_printf("rssi=%d ", desc->rssi);
+    console_printf("pai=%d ", desc->periodic_adv_itvl);
+
+    if (directed) {
+        console_printf("direct=");
+        print_addr(desc->direct_addr.val);
+        console_printf("/%d ", desc->direct_addr.type);
+    }
+
+    console_printf("len=%d\n", desc->length_data);
+
+    if (!desc->length_data) {
         return;
     }
 
@@ -1153,11 +1147,10 @@ btshell_gap_event(struct ble_gap_event *event, void *arg)
 
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
-        console_printf("connection %s; status=%d ",
-                       event->connect.status == 0 ? "established" : "failed",
-                       event->connect.status);
-
-        if (event->connect.status == 0) {
+        console_printf(COLOR_WHITE "Connected  %04x  " COLOR_DEFAULT, event->connect.conn_handle);
+        if (event->connect.status) {
+            console_printf(COLOR_RED "failed(%d)" COLOR_DEFAULT, event->connect.status);
+        } else {
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
             print_conn_desc(&desc);
@@ -1166,6 +1159,7 @@ btshell_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
+        console_printf(COLOR_WHITE "Disconnected  %04x  " COLOR_DEFAULT, (int)event->disconnect.conn.conn_handle);
         console_printf("disconnect; reason=%d ", event->disconnect.reason);
         print_conn_desc(&event->disconnect.conn);
 
@@ -1368,6 +1362,11 @@ btshell_gap_event(struct ble_gap_event *event, void *arg)
         handle_periodic_report(event);
         return 0;
 #endif
+    case BLE_GAP_EVENT_SCAN_REQ_RCVD:
+        console_printf("ScanReq  %d  ", event->scan_req_rcvd.instance);
+        print_addr(&event->scan_req_rcvd.scan_addr);
+        console_printf("\n");
+        return 0;
     default:
         return 0;
     }
@@ -2036,6 +2035,31 @@ btshell_on_reset(int reason)
 static void
 btshell_on_sync(void)
 {
+    uint8_t addr[6];
+    int rc;
+
+    /* Make sure we have proper identity address set (public preferred) */
+    rc = ble_hs_util_ensure_addr(0);
+    assert(rc == 0);
+
+    rc = ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, addr, NULL);
+    if (!rc) {
+        console_printf("Public address: ");
+    } else {
+        rc = ble_hs_id_copy_addr(BLE_ADDR_RANDOM, addr, NULL);
+        if (!rc) {
+            console_printf("Random address: ");
+        } else {
+            console_printf("Warning: no identity address set\n");
+        }
+    }
+
+    if (!rc) {
+        print_addr(addr);
+    }
+
+    console_printf("\n");
+
     console_printf("Host and controller synced\n");
 }
 
