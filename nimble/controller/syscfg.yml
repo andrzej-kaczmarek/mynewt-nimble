@@ -183,6 +183,11 @@ syscfg.defs:
             the HW supports this). This value is in microseconds.
         value: '0'
 
+    BLE_LL_HCI_LLCP_TRACE:
+        description: >
+            Enables LLCP tracing using HCI vendor-specific events.
+        value: '0'
+
     # Configuration for LL supported features.
     #
     # There are a total 8 features that the LL can support. These can be found
