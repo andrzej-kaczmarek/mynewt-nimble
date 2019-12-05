@@ -1471,8 +1471,8 @@ ble_ll_scan_event_proc(struct ble_npl_event *ev)
     struct ble_ll_scan_sm *scansm;
     struct ble_ll_scan_params *scanphy;
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
-    uint32_t dt_next;
-    uint32_t win_next;
+    uint32_t dt_next = 0;
+    uint32_t win_next = 0;
     uint32_t scan_itvl_next;
     uint32_t next_event_time_next;
     struct ble_ll_scan_params *scanphy_next;
