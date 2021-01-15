@@ -30,6 +30,8 @@
 #include "mcu/mcu.h"
 #include "cmac_driver/cmac_shared.h"
 #include "nimble/ble_hci_trans.h"
+#include "nimble/nimble_npl.h"
+#include "controller/ble_ll.h"
 #include "os/os_mbuf.h"
 #include "ble_hci_trans_h4.h"
 #include "ble_hci_cmac_priv.h"
@@ -121,6 +123,18 @@ ble_hci_trans_ll_acl_tx(struct os_mbuf *om)
     return 0;
 }
 
+static struct ble_npl_event s2c_read;
+
+static void s2c_read_func(struct ble_npl_event *ev)
+{
+    cmac_mbox_read();
+}
+
+void queue_s2c_read(void)
+{
+    ble_npl_eventq_put(&g_ble_ll_data.ll_evq, &s2c_read);
+}
+
 void
 ble_hci_trans_cfg_ll(ble_hci_trans_rx_cmd_fn *cmd_cb, void *cmd_arg,
                      ble_hci_trans_rx_acl_fn *acl_cb, void *acl_arg)
@@ -129,6 +143,8 @@ ble_hci_trans_cfg_ll(ble_hci_trans_rx_cmd_fn *cmd_cb, void *cmd_arg,
     g_ble_hci_cmac_ll_api.cmd_arg = cmd_arg;
     g_ble_hci_cmac_ll_api.acl_cb = acl_cb;
     g_ble_hci_cmac_ll_api.acl_arg = acl_arg;
+
+    ble_npl_event_init(&s2c_read, s2c_read_func, NULL);
 
     /* Setup callbacks for mailboxes */
     cmac_mbox_set_read_cb(ble_hci_cmac_ll_mbox_read_cb);

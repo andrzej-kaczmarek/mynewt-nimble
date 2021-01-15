@@ -160,3 +160,15 @@ cmac_mbox_write(const void *data, uint16_t len)
 
     return 0;
 }
+
+int
+cmac_mbox_read_is_ready(void)
+{
+#if MYNEWT_VAL(BLE_HOST)
+    volatile struct cmac_mbox *mbox = &g_cmac_shared_data->mbox_s2c;
+#else
+    volatile struct cmac_mbox *mbox = &g_cmac_shared_data.mbox_c2s;
+#endif
+
+    return mbox->rd_off != mbox->wr_off;
+}
