@@ -67,7 +67,7 @@
 struct ble_ll_scan_params {
     uint8_t own_addr_type;
     uint8_t scan_filt_policy;
-    struct ble_ll_scan_phy scan_phys[BLE_LL_SCAN_PHY_NUMBER];
+    struct ble_ll_scan_phy scan_phys[BLE_LL_SCAN_NUM_PHYS];
 };
 
 static struct ble_ll_scan_params g_ble_ll_scan_params;
@@ -1182,12 +1182,21 @@ ble_ll_scan_sm_start(struct ble_ll_scan_sm *scansm)
 {
     struct ble_ll_scan_phy *scanp;
     struct ble_ll_scan_phy *scanp_next;
+    struct ble_ll_scan_phy *scanp_0, *scanp_1;
 
     if (!ble_ll_is_valid_own_addr_type(scansm->own_addr_type, g_random_addr)) {
         return BLE_ERR_INV_HCI_CMD_PARMS;
     }
 
+    scansm->scanp = &scansm->scan_phys[0];
     BLE_LL_ASSERT(scansm->scanp);
+    scansm->scanp_next = NULL;
+#if BLE_LL_SCAN_NUM_PHYS > 1
+    if (scansm->scan_phys[1].configured) {
+        scansm->scanp_next = &scansm->scan_phys[1];
+    }
+#endif
+
     scanp = scansm->scanp;
     scanp_next = scansm->scanp_next;
 
@@ -1213,6 +1222,25 @@ ble_ll_scan_sm_start(struct ble_ll_scan_sm *scansm)
 
     os_mempool_clear(&g_scan_dup_pool);
     TAILQ_INIT(&g_scan_dup_list);
+
+    if ((BLE_LL_SCAN_NUM_PHYS > 1) && scansm->scan_phys[0].configured &&
+                                      scansm->scan_phys[1].configured) {
+        scanp_0 = &scansm->scan_phys[0];
+        scanp_1 = &scansm->scan_phys[1];
+
+        /*
+         * If either PHY is configured for continuous scan we need to adjust its
+         * interval to make space for other PHY.
+         */
+
+        if (scanp_0->timing.interval == scanp_0->timing.window) {
+            scanp_0->timing.interval += scanp_1->timing.window;
+        }
+
+        if (scanp_1->timing.interval == scanp_1->timing.window) {
+            scanp_1->timing.interval += scanp_0->timing.window;
+        }
+    }
 
     /*
      * First scan window can start when RF is enabled. Add 1 tick since we are
@@ -3274,14 +3302,16 @@ ble_ll_scan_set_scan_params(const uint8_t *cmdbuf, uint8_t len)
     g_ble_ll_scan_params.own_addr_type = cmd->own_addr_type;
     g_ble_ll_scan_params.scan_filt_policy = cmd->filter_policy;
 
-    scanp = &g_ble_ll_scan_params.scan_phys[PHY_UNCODED];
+    scanp = &g_ble_ll_scan_params.scan_phys[0];
     scanp->configured = 1;
+    scanp->phy = BLE_PHY_1M;
     scanp->scan_type = cmd->scan_type;
     scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(scan_itvl);
     scanp->timing.window = ble_ll_scan_time_hci_to_ticks(scan_window);
 
-#if (BLE_LL_SCAN_PHY_NUMBER == 2)
-    scanp = &g_ble_ll_scan_params.scan_phys[PHY_CODED];
+#if BLE_LL_SCAN_NUM_PHYS > 1
+    /* 2nd PHY is not configured for legacy scan */
+    scanp = &g_ble_ll_scan_params.scan_phys[1];
     scanp->configured = 0;
 #endif
 
@@ -3315,10 +3345,8 @@ ble_ll_set_ext_scan_params(const uint8_t *cmdbuf, uint8_t len)
 {
     const struct ble_hci_le_set_ext_scan_params_cp *cmd = (const void *) cmdbuf;
     const struct scan_params *params = cmd->scans;
-
-    struct ble_ll_scan_phy new_params[BLE_LL_SCAN_PHY_NUMBER] = { };
-    struct ble_ll_scan_phy *uncoded = &new_params[PHY_UNCODED];
-    struct ble_ll_scan_phy *coded = &new_params[PHY_CODED];
+    struct ble_ll_scan_phy scan_phys_new[BLE_LL_SCAN_NUM_PHYS] = { };
+    struct ble_ll_scan_phy *scanp;
     uint16_t interval;
     uint16_t window;
     int rc;
@@ -3352,6 +3380,8 @@ ble_ll_set_ext_scan_params(const uint8_t *cmdbuf, uint8_t len)
          return BLE_ERR_INV_HCI_CMD_PARMS;
      }
 
+    scanp = &scan_phys_new[0];
+
     if (cmd->phys & BLE_HCI_LE_PHY_1M_PREF_MASK) {
         if (len < sizeof(*params)) {
             return BLE_ERR_INV_HCI_CMD_PARMS;
@@ -3365,12 +3395,13 @@ ble_ll_set_ext_scan_params(const uint8_t *cmdbuf, uint8_t len)
             return rc;
         }
 
-        uncoded->scan_type = params->type;
-        uncoded->timing.interval = ble_ll_scan_time_hci_to_ticks(interval);
-        uncoded->timing.window = ble_ll_scan_time_hci_to_ticks(window);
+        scanp->configured = 1;
+        scanp->phy = BLE_PHY_1M;
+        scanp->scan_type = params->type;
+        scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(interval);
+        scanp->timing.window = ble_ll_scan_time_hci_to_ticks(window);
 
-        /* That means user wants to use this PHY for scanning */
-        uncoded->configured = 1;
+        scanp++;
         params++;
         len -= sizeof(*params);
     }
@@ -3389,32 +3420,18 @@ ble_ll_set_ext_scan_params(const uint8_t *cmdbuf, uint8_t len)
             return rc;
         }
 
-        coded->scan_type = params->type;
-        coded->timing.interval = ble_ll_scan_time_hci_to_ticks(interval);
-        coded->timing.window = ble_ll_scan_time_hci_to_ticks(window);
-
-        /* That means user wants to use this PHY for scanning */
-        coded->configured = 1;
+        scanp->configured = 1;
+        scanp->phy = BLE_PHY_CODED;
+        scanp->scan_type = params->type;
+        scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(interval);
+        scanp->timing.window = ble_ll_scan_time_hci_to_ticks(window);
     }
 #endif
-
-    /* if any of PHYs is configured for continuous scan we alter interval to
-     * fit other PHY
-     */
-    if (coded->configured && uncoded->configured) {
-        if (coded->timing.interval == coded->timing.window) {
-            coded->timing.interval += uncoded->timing.window;
-        }
-
-        if (uncoded->timing.interval == uncoded->timing.window) {
-            uncoded->timing.interval += coded->timing.window;
-        }
-    }
 
     g_ble_ll_scan_params.own_addr_type = cmd->own_addr_type;
     g_ble_ll_scan_params.scan_filt_policy = cmd->filter_policy;
 
-    memcpy(g_ble_ll_scan_params.scan_phys, new_params, sizeof(new_params));
+    memcpy(g_ble_ll_scan_params.scan_phys, scan_phys_new, sizeof(scan_phys_new));
 
     return 0;
 }
@@ -3488,7 +3505,6 @@ ble_ll_scan_set_enable(uint8_t enable, uint8_t filter_dups, uint16_t period,
     int rc;
     struct ble_ll_scan_sm *scansm;
     struct ble_ll_scan_phy *scanp;
-    struct ble_ll_scan_phy *scanp_phy;
     int i;
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
     uint32_t period_ticks = 0;
@@ -3545,10 +3561,10 @@ ble_ll_scan_set_enable(uint8_t enable, uint8_t filter_dups, uint16_t period,
     /* if already enable we just need to update parameters */
     if (scansm->scan_enabled) {
         /* Controller does not allow initiating and scanning.*/
-        for (i = 0; i < BLE_LL_SCAN_PHY_NUMBER; i++) {
-            scanp_phy = &scansm->scan_phys[i];
-            if (scanp_phy->configured &&
-                                scanp_phy->scan_type == BLE_SCAN_TYPE_INITIATE) {
+        for (i = 0; i < BLE_LL_SCAN_NUM_PHYS; i++) {
+            scanp = &scansm->scan_phys[i];
+            if (scanp->configured &&
+                scanp->scan_type == BLE_SCAN_TYPE_INITIATE) {
                 return BLE_ERR_CMD_DISALLOWED;
             }
         }
@@ -3575,49 +3591,12 @@ ble_ll_scan_set_enable(uint8_t enable, uint8_t filter_dups, uint16_t period,
 #if MYNEWT_VAL(BLE_LL_NUM_SCAN_DUP_ADVS)
     scansm->scan_filt_dups = filter_dups;
 #endif
-    scansm->scanp = NULL;
-    scansm->scanp_next = NULL;
 
     scansm->own_addr_type = g_ble_ll_scan_params.own_addr_type;
     scansm->scan_filt_policy = g_ble_ll_scan_params.scan_filt_policy;
 
-    for (i = 0; i < BLE_LL_SCAN_PHY_NUMBER; i++) {
-        scanp_phy = &scansm->scan_phys[i];
-        scanp = &g_ble_ll_scan_params.scan_phys[i];
-
-        if (!scanp->configured) {
-            continue;
-        }
-
-        scanp_phy->configured = scanp->configured;
-        scanp_phy->scan_type = scanp->scan_type;
-        scanp_phy->timing = scanp->timing;
-
-        if (!scansm->scanp) {
-            scansm->scanp = scanp_phy;
-        } else {
-            scansm->scanp_next = scanp_phy;
-        }
-    }
-
-    /* spec is not really clear if we should use defaults in this case
-     * or just disallow starting scan without explicit configuration
-     * For now be nice to host and just use values based on LE Set Scan
-     * Parameters defaults.
-     */
-    if (!scansm->scanp) {
-        scansm->scanp = &scansm->scan_phys[PHY_UNCODED];
-        scansm->own_addr_type = BLE_ADDR_PUBLIC;
-        scansm->scan_filt_policy = BLE_HCI_SCAN_FILT_NO_WL;
-
-        scanp_phy = scansm->scanp;
-        scanp_phy->configured = 1;
-        scanp_phy->scan_type = BLE_SCAN_TYPE_PASSIVE;
-        scanp_phy->timing.interval =
-                        ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_ITVL_DEF);
-        scanp_phy->timing.window =
-                        ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_WINDOW_DEF);
-    }
+    memcpy(scansm->scan_phys, g_ble_ll_scan_params.scan_phys,
+           sizeof(g_ble_ll_scan_params.scan_phys));
 
     rc = ble_ll_scan_sm_start(scansm);
 
@@ -3695,13 +3674,19 @@ ble_ll_scan_initiator_start(struct hci_create_conn *hcc,
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
     scansm->ext_scanning = 0;
 #endif
-    scansm->scanp = &scansm->scan_phys[PHY_UNCODED];
-    scansm->scanp_next = NULL;
 
-    scanp = scansm->scanp;
+    scanp = &scansm->scan_phys[0];
+    scanp->configured = 1;
+    scanp->phy = BLE_PHY_1M;
+    scanp->scan_type = BLE_SCAN_TYPE_INITIATE;
     scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(hcc->scan_itvl);
     scanp->timing.window = ble_ll_scan_time_hci_to_ticks(hcc->scan_window);
-    scanp->scan_type = BLE_SCAN_TYPE_INITIATE;
+
+#if BLE_LL_SCAN_NUM_PHYS > 1
+    /* 2nd PHY is not configured for legacy conn create */
+    scanp = &scansm->scan_phys[1];
+    scanp->configured = 0;
+#endif
 
     rc = ble_ll_scan_sm_start(scansm);
     if (sm == NULL) {
@@ -3723,55 +3708,48 @@ ble_ll_scan_ext_initiator_start(struct hci_ext_create_conn *hcc,
                                 struct ble_ll_scan_sm **sm)
 {
     struct ble_ll_scan_sm *scansm;
-    struct ble_ll_scan_phy *scanp_uncoded;
-    struct ble_ll_scan_phy *scanp_coded;
+    struct ble_ll_scan_phy *scanp;
     struct hci_ext_conn_params *params;
     int rc;
 
     scansm = &g_ble_ll_scan_sm;
     scansm->own_addr_type = hcc->own_addr_type;
     scansm->scan_filt_policy = hcc->filter_policy;
-    scansm->scanp = NULL;
-    scansm->scanp_next = NULL;
     scansm->ext_scanning = 1;
+
+#if BLE_LL_SCAN_NUM_PHYS > 1
+    /*
+     * 1st PHY will be configured so don't care, but 2nd PHY has to be not
+     * configured by default.
+     */
+    scansm->scan_phys[1].configured = 0;
+#endif
+
+    scanp = &scansm->scan_phys[0];
 
     if (hcc->init_phy_mask & BLE_PHY_MASK_1M) {
         params = &hcc->params[0];
-        scanp_uncoded = &scansm->scan_phys[PHY_UNCODED];
 
-        scanp_uncoded->timing.interval = ble_ll_scan_time_hci_to_ticks(params->scan_itvl);
-        scanp_uncoded->timing.window = ble_ll_scan_time_hci_to_ticks(params->scan_window);
-        scanp_uncoded->scan_type = BLE_SCAN_TYPE_INITIATE;
-        scansm->scanp = scanp_uncoded;
+        scanp->configured = 1;
+        scanp->phy = BLE_PHY_1M;
+        scanp->scan_type = BLE_SCAN_TYPE_INITIATE;
+        scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(params->scan_itvl);
+        scanp->timing.window = ble_ll_scan_time_hci_to_ticks(params->scan_window);
+        scanp++;
     }
 
+#if MYNEWT_VAL(BLE_LL_CFG_FEAT_LE_CODED_PHY)
     if (hcc->init_phy_mask & BLE_PHY_MASK_CODED) {
         params = &hcc->params[2];
-        scanp_coded = &scansm->scan_phys[PHY_CODED];
 
-        scanp_coded->timing.interval = ble_ll_scan_time_hci_to_ticks(params->scan_itvl);
-        scanp_coded->timing.window = ble_ll_scan_time_hci_to_ticks(params->scan_window);
-        scanp_coded->scan_type = BLE_SCAN_TYPE_INITIATE;
-        if (scansm->scanp) {
-            scansm->scanp_next = scanp_coded;
-        } else {
-            scansm->scanp = scanp_coded;
-        }
+        scanp->configured = 1;
+        scanp->phy = BLE_PHY_CODED;
+        scanp->scan_type = BLE_SCAN_TYPE_INITIATE;
+        scanp->timing.interval = ble_ll_scan_time_hci_to_ticks(params->scan_itvl);
+        scanp->timing.window = ble_ll_scan_time_hci_to_ticks(params->scan_window);
+        scanp++;
     }
-
-    /* if any of PHYs is configured for continuous scan we alter interval to
-     * fit other PHY
-     */
-    if (scansm->scanp && scansm->scanp_next && scanp_coded->configured &&
-        scanp_uncoded->configured) {
-        if (scanp_coded->timing.interval == scanp_coded->timing.window) {
-            scanp_coded->timing.interval += scanp_uncoded->timing.window;
-        }
-
-        if (scanp_uncoded->timing.interval == scanp_uncoded->timing.window) {
-            scanp_uncoded->timing.interval += scanp_coded->timing.window;
-        }
-    }
+#endif
 
     rc = ble_ll_scan_sm_start(scansm);
     if (sm == NULL) {
@@ -3861,7 +3839,6 @@ ble_ll_scan_common_init(void)
 {
     struct ble_ll_scan_sm *scansm;
     struct ble_ll_scan_phy *scanp;
-    int i;
 
     /* Clear state machine in case re-initialized */
     scansm = &g_ble_ll_scan_sm;
@@ -3870,22 +3847,23 @@ ble_ll_scan_common_init(void)
     /* Clear scan parameters in case re-initialized */
     memset(&g_ble_ll_scan_params, 0, sizeof(g_ble_ll_scan_params));
 
+    scanp = &g_ble_ll_scan_params.scan_phys[0];
+    scanp->configured = 1;
+    scanp->phy = BLE_PHY_1M;
+    scanp->scan_type = BLE_SCAN_TYPE_PASSIVE;
+    scanp->timing.interval =
+                ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_ITVL_DEF);
+    scanp->timing.window =
+                ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_WINDOW_DEF);
+
+#if BLE_LL_SCAN_NUM_PHYS > 1
+    scanp = &g_ble_ll_scan_params.scan_phys[1];
+    scanp->configured = 0;
+#endif
+
     /* Initialize scanning window end event */
     ble_npl_event_init(&scansm->scan_sched_ev, ble_ll_scan_event_proc, scansm);
 
-    for (i = 0; i < BLE_LL_SCAN_PHY_NUMBER; i++) {
-        /* Set all non-zero default parameters */
-        scanp = &g_ble_ll_scan_params.scan_phys[i];
-        scanp->timing.interval =
-                        ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_ITVL_DEF);
-        scanp->timing.window =
-                        ble_ll_scan_time_hci_to_ticks(BLE_HCI_SCAN_WINDOW_DEF);
-    }
-
-    scansm->scan_phys[PHY_UNCODED].phy = BLE_PHY_1M;
-#if (BLE_LL_SCAN_PHY_NUMBER == 2)
-    scansm->scan_phys[PHY_CODED].phy = BLE_PHY_CODED;
-#endif
 
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_PRIVACY)
     /* Make sure we'll generate new NRPA if necessary */

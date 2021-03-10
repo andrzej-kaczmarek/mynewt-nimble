@@ -58,16 +58,15 @@ extern "C" {
 
 #if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV)
 #define BLE_SCAN_RSP_DATA_MAX_LEN       MYNEWT_VAL(BLE_EXT_ADV_MAX_SIZE)
-
-/* For Bluetooth 5.0 we need state machine for two PHYs*/
-#define BLE_LL_SCAN_PHY_NUMBER          (2)
 #else
-#define BLE_LL_SCAN_PHY_NUMBER          (1)
 #define BLE_SCAN_RSP_DATA_MAX_LEN       BLE_SCAN_RSP_LEGACY_DATA_MAX_LEN
 #endif
 
-#define PHY_UNCODED                    (0)
-#define PHY_CODED                      (1)
+#if MYNEWT_VAL(BLE_LL_CFG_FEAT_LL_EXT_ADV) && MYNEWT_VAL(BLE_LL_CFG_FEAT_LE_CODED_PHY)
+#define BLE_LL_SCAN_NUM_PHYS            (2)
+#else
+#define BLE_LL_SCAN_NUM_PHYS            (1)
+#endif
 
 #define BLE_LL_EXT_ADV_MODE_NON_CONN    (0x00)
 #define BLE_LL_EXT_ADV_MODE_CONN        (0x01)
@@ -82,8 +81,8 @@ struct ble_ll_scan_timing {
 
 struct ble_ll_scan_phy
 {
-    uint8_t phy;
     uint8_t configured;
+    uint8_t phy;
     uint8_t scan_type;
     uint8_t scan_chan;
     struct ble_ll_scan_timing timing;
@@ -187,7 +186,7 @@ struct ble_ll_scan_sm
 
     struct ble_ll_scan_phy *scanp;
     struct ble_ll_scan_phy *scanp_next;
-    struct ble_ll_scan_phy scan_phys[BLE_LL_SCAN_PHY_NUMBER];
+    struct ble_ll_scan_phy scan_phys[BLE_LL_SCAN_NUM_PHYS];
 };
 
 /* Scan types */
